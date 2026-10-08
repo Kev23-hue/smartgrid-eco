@@ -3,3 +3,6 @@ __pycache__/
 *.db
 .venv/
 .vscode/
+*.db-wal
+*.db-shm
+demo_queue.db*
