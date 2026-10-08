@@ -1,0 +1,47 @@
+{
+  "pico_por_microred": 2500.0,
+  "resultados": [
+    {
+      "synchronous": "FULL",
+      "grupo": 1,
+      "ingesta_por_s": 339,
+      "salida_por_s": 60419,
+      "cumple_pico": false
+    },
+    {
+      "synchronous": "FULL",
+      "grupo": 50,
+      "ingesta_por_s": 12331,
+      "salida_por_s": 52550,
+      "cumple_pico": true
+    },
+    {
+      "synchronous": "FULL",
+      "grupo": 500,
+      "ingesta_por_s": 42442,
+      "salida_por_s": 49364,
+      "cumple_pico": true
+    },
+    {
+      "synchronous": "NORMAL",
+      "grupo": 1,
+      "ingesta_por_s": 4283,
+      "salida_por_s": 109710,
+      "cumple_pico": true
+    },
+    {
+      "synchronous": "NORMAL",
+      "grupo": 50,
+      "ingesta_por_s": 31975,
+      "salida_por_s": 57819,
+      "cumple_pico": true
+    },
+    {
+      "synchronous": "NORMAL",
+      "grupo": 500,
+      "ingesta_por_s": 49265,
+      "salida_por_s": 57073,
+      "cumple_pico": true
+    }
+  ]
+}
