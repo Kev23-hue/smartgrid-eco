@@ -1,0 +1,22 @@
+{
+  "eventos": 1000,
+  "eventos_con_accion": 1000,
+  "io_delay_ms": 0.0,
+  "cycle_ms": 250.0,
+  "unidad": "ms",
+  "reaccion": {
+    "p50": 0.0029,
+    "p95": 0.0038,
+    "p99": 0.0058,
+    "max": 0.0286,
+    "media": 0.0031
+  },
+  "peor_caso_con_sondeo": {
+    "p50": 250.0029,
+    "p95": 250.0038,
+    "p99": 250.0058,
+    "max": 250.0286,
+    "media": 250.0031
+  },
+  "cumple_es02_p99_menor_2000ms": true
+}
