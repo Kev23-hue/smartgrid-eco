@@ -1,0 +1,2 @@
+# Solo para hablar con Redpanda/Kafka (reenviador). Las pruebas unitarias NO lo necesitan.
+confluent-kafka>=2.5
