@@ -1,0 +1,12 @@
+{
+  "microgrid_id": "mg-01",
+  "cycle_ms": 250,
+  "policy_file": "edge/config/policy.json",
+  "audit_db": "audit.db",
+  "sources": [
+    {"adapter": "solar", "kw": 100},
+    {"adapter": "eolica", "kw": 40}
+  ],
+  "demand_kw": 120,
+  "actuator": {"soc": 0.6, "capacity_kwh": 200, "io_delay_ms": 0}
+}

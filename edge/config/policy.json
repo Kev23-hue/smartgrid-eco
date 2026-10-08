@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "max_discharge_kw": 60,
+  "max_charge_kw": 60,
+  "soc_min": 0.2,
+  "soc_max": 0.95,
+  "tolerance_kw": 1.0
+}
