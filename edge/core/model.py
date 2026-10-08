@@ -53,3 +53,20 @@ class CycleResult:
     state: GridState
     latency_ns: int  # desde que el estado se lee hasta que el actuador confirma
     acted: bool
+
+
+@dataclass(frozen=True)
+class Reading:
+    """Lectura de un contador. La clave de deduplicación es (meter_id, measured_at) (ADR-004).
+
+    measured_at: instante de la medición en milisegundos Unix, puesto por el contador.
+    seq: número de secuencia por contador; permite detectar huecos (S10).
+    """
+    meter_id: str
+    measured_at: int
+    seq: int
+    kwh: float
+
+    @property
+    def key(self) -> str:
+        return f"{self.meter_id}|{self.measured_at}"
