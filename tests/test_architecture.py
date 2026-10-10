@@ -7,8 +7,9 @@ import ast
 import pathlib
 import unittest
 
-CORE = pathlib.Path(__file__).resolve().parent.parent / "edge" / "core"
-PROHIBIDOS = ("edge.adapters", "edge.composition", "sqlite3", "socket", "requests", "paho", "kafka",
+RAIZ = pathlib.Path(__file__).resolve().parent.parent
+NUCLEOS = [RAIZ / "edge" / "core", RAIZ / "cloud" / "core"]
+PROHIBIDOS = ("edge.adapters", "edge.composition", "cloud.adapters", "psycopg", "confluent_kafka", "sqlite3", "socket", "requests", "paho", "kafka",
               "confluent_kafka", "time", "os", "subprocess", "json")
 
 
@@ -25,8 +26,9 @@ def imports_de(path: pathlib.Path):
 
 class ArquitecturaTests(unittest.TestCase):
     def test_el_nucleo_no_importa_adaptadores_ni_io(self):
-        archivos = list(CORE.glob("*.py"))
+        archivos = [f for n in NUCLEOS for f in n.glob("*.py")]
         self.assertTrue(archivos)
+        self.assertTrue(any("cloud" in f.parts for f in archivos))   # el núcleo de la nube también se vigila
         for f in archivos:
             for imp in imports_de(f):
                 limpio = imp.lstrip(".")
