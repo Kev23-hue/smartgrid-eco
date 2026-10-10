@@ -33,3 +33,30 @@ services:
     command:
       - rpk -X brokers=redpanda:9092 topic create telemetry.raw -p 24 -r 1 || true
     restart: "no"
+
+  timescaledb:
+    image: timescale/timescaledb:2.17.2-pg16
+    container_name: sge-timescaledb
+    environment:
+      POSTGRES_USER: sge
+      POSTGRES_PASSWORD: sge
+      POSTGRES_DB: sge
+    ports:
+      - "5433:5432"
+    # Archivos sueltos (no la carpeta entera) para no tapar los scripts de inicio de la propia imagen.
+    # Solo se ejecutan la primera vez, con el volumen vacío. Para rehacer: docker compose down -v
+    command: ["postgres", "-c", "shared_preload_libraries=timescaledb"]
+    volumes:
+      - ../cloud/sql/01_schema.sql:/docker-entrypoint-initdb.d/010_schema.sql:ro
+      - ../cloud/sql/02_timescale.sql:/docker-entrypoint-initdb.d/020_timescale.sql:ro
+      - sge-pgdata:/var/lib/postgresql/data
+    shm_size: 512mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sge -d sge"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  sge-pgdata:

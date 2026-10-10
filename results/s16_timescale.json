@@ -1,0 +1,101 @@
+{
+  "filas": 100000,
+  "unicas": 95252,
+  "duplicados_inyectados": 4748,
+  "cpus_visibles": 12,
+  "objetivo_filas_por_s": 30000,
+  "corridas": [
+    {
+      "modo": "solo_insercion",
+      "escritores": 1,
+      "lote": 2000,
+      "synchronous_commit": "on",
+      "filas_por_s": 11484,
+      "nuevas": 95252,
+      "correcto": true
+    },
+    {
+      "modo": "solo_insercion",
+      "escritores": 4,
+      "lote": 2000,
+      "synchronous_commit": "on",
+      "filas_por_s": 31629,
+      "nuevas": 95252,
+      "correcto": true
+    },
+    {
+      "modo": "solo_insercion",
+      "escritores": 1,
+      "lote": 2000,
+      "synchronous_commit": "off",
+      "filas_por_s": 11730,
+      "nuevas": 95252,
+      "correcto": true
+    },
+    {
+      "modo": "solo_insercion",
+      "escritores": 4,
+      "lote": 2000,
+      "synchronous_commit": "off",
+      "filas_por_s": 37200,
+      "nuevas": 95252,
+      "correcto": true
+    },
+    {
+      "modo": "lote_completo",
+      "escritores": 1,
+      "lote": 2000,
+      "synchronous_commit": "on",
+      "filas_por_s": 6223,
+      "nuevas": 95252,
+      "correcto": true
+    },
+    {
+      "modo": "lote_completo",
+      "escritores": 4,
+      "lote": 2000,
+      "synchronous_commit": "on",
+      "filas_por_s": 22558,
+      "nuevas": 95252,
+      "correcto": true
+    },
+    {
+      "modo": "lote_completo",
+      "escritores": 1,
+      "lote": 2000,
+      "synchronous_commit": "off",
+      "filas_por_s": 6590,
+      "nuevas": 95252,
+      "correcto": true
+    },
+    {
+      "modo": "lote_completo",
+      "escritores": 4,
+      "lote": 2000,
+      "synchronous_commit": "off",
+      "filas_por_s": 25165,
+      "nuevas": 95252,
+      "correcto": true
+    }
+  ],
+  "mejor_lote_completo_con_sync_on": {
+    "modo": "lote_completo",
+    "escritores": 4,
+    "lote": 2000,
+    "synchronous_commit": "on",
+    "filas_por_s": 22558,
+    "nuevas": 95252,
+    "correcto": true
+  },
+  "mejor_lote_completo": {
+    "modo": "lote_completo",
+    "escritores": 4,
+    "lote": 2000,
+    "synchronous_commit": "off",
+    "filas_por_s": 25165,
+    "nuevas": 95252,
+    "correcto": true
+  },
+  "todas_correctas": true,
+  "aviso": "Medido en un contenedor local, no en los 2 nodos de 8 vCPU / 64 GiB de S16. Es una referencia, no la validación final."
+}

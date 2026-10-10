@@ -6,3 +6,4 @@ __pycache__/
 *.db-wal
 *.db-shm
 demo_queue.db*
+mensajes_muertos.jsonl
