@@ -26,6 +26,17 @@ class SimulatedWind:
         return self.kw
 
 
+class SimulatedBiomass:
+    """ES-04: fuente nueva. Es solo un adaptador más del mismo puerto; el núcleo no cambia."""
+    name = "biomasa"
+
+    def __init__(self, kw: float = 30.0):
+        self.kw = kw
+
+    def read_kw(self) -> float:
+        return self.kw
+
+
 class SimulatedDemand:
     def __init__(self, kw: float = 120.0):
         self.kw = kw
