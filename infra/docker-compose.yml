@@ -58,5 +58,42 @@ services:
       retries: 20
       start_period: 10s
 
+  # ---- Servicios propios (perfil "app"): docker compose --profile app up -d --build ----
+  # Con ellos el corte vertical tiene 4 contenedores de larga duración: log, base de datos,
+  # procesador de flujos y reenviador del borde.
+  processor:
+    profiles: ["app"]
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    container_name: sge-processor
+    restart: unless-stopped
+    depends_on:
+      topics:
+        condition: service_completed_successfully
+      timescaledb:
+        condition: service_healthy
+    command: ["python", "-m", "loadtest.processor", "--backend", "kafka", "--dir", "/tmp", "--run", "compose",
+              "--bootstrap", "redpanda:9092", "--topic", "telemetry.raw", "--group", "proc-compose",
+              "--dsn", "postgresql://sge:sge@timescaledb:5432/sge"]
+
+  edge-forwarder:
+    profiles: ["app"]
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    container_name: sge-edge-forwarder
+    restart: unless-stopped
+    depends_on:
+      topics:
+        condition: service_completed_successfully
+    # Un reenviador de borde generando 200 lecturas/s durante ~28 h (cola durable en un volumen).
+    command: ["python", "-m", "loadtest.generator", "--backend", "kafka", "--dir", "/data", "--run", "compose",
+              "--bootstrap", "redpanda:9092", "--topic", "telemetry.raw", "--id", "0",
+              "--phases", "continuo:200:100000", "--meters", "50"]
+    volumes:
+      - sge-edge:/data
+
 volumes:
   sge-pgdata:
+  sge-edge:

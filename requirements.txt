@@ -1,3 +1,5 @@
 # Solo para la demo con Redpanda y TimescaleDB. Las pruebas unitarias NO lo necesitan.
 confluent-kafka>=2.5
 psycopg[binary]>=3.2
+# Comandos firmados (ES-05/ES-07). Sin ella, esas pruebas se omiten.
+cryptography>=43

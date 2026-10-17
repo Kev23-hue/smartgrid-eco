@@ -7,3 +7,4 @@ __pycache__/
 *.db-shm
 demo_queue.db*
 mensajes_muertos.jsonl
+results/carga_tmp/
