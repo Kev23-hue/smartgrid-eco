@@ -43,10 +43,14 @@ def escenario(a) -> tuple[list[tuple[str, float, float]], str]:
         return [("nominal_1", n, a.phase_secs), ("rafaga", b, a.burst_secs), ("nominal_2", n, a.phase_secs * 2)], ""
     if a.scenario == "chaos":
         d = a.phase_secs * 4
-        return [("carga_con_fallas", n, d)], a.chaos or f"{int(d*.12)}:broker_down:8,{int(d*.35)}:db_down:8,{int(d*.55)}:kill_processor:4,{int(d*.7)}:lose_acks:3"
+        return [("carga_con_fallas", n, d)], a.chaos or f"{int(d*.12)}:broker_down:8,{int(d*.35)}:db_down:8,{int(d*.55)}:kill_processor:4" + (f",{int(d*.7)}:lose_acks:3" if a.backend == "file" else "")
     if a.scenario == "ramp":
         return [(f"escalon_{int(n*m)}", n * m, a.phase_secs) for m in (1, 2, 4, 8, 16, 32)], ""
     raise SystemExit("escenario desconocido")
+
+
+def es_progreso_proc(nombre: str) -> bool:
+    return nombre.startswith("proc_p") and nombre.endswith(".json") and ".tmp" not in nombre
 
 
 class Entorno:
@@ -75,9 +79,12 @@ class Entorno:
         else:
             self.compose("stop" if abajo else "start", "timescaledb")
 
-    def perder_acks(self, n: int) -> None:
+    def perder_acks(self, n: int) -> bool:
+        """Solo es aplicable con el log en archivo; con Kafka real no hay forma de perder acks desde fuera."""
         if self.a.backend == "file":
             open(os.path.join(self.ctl, "lose_acks"), "w").write(str(n))
+            return True
+        return False
 
 
 def main() -> None:
@@ -170,12 +177,15 @@ def main() -> None:
             incarnaciones[0] += 1
             lanzar_proc(0, incarnaciones[0])
         elif acc == "lose_acks":
-            env.perder_acks(int(p))
+            reg["aplicada"] = env.perder_acks(int(p))
+            if not reg["aplicada"]:
+                print("AVISO: lose_acks no se aplica con backend kafka; se registra como no aplicada")
         reg["fin_real"] = round(time.time() - t0, 1)
         log_fallas.append(reg)
 
     hilos, pend = [], list(eventos)
     serie = []
+    ultimo: dict = {}
     deadline = t0 + total_secs + a.drain_timeout + 60
     try:
         while time.time() < deadline:
@@ -184,9 +194,19 @@ def main() -> None:
                 ev = pend.pop(0)
                 h = threading.Thread(target=ejecutar, args=(ev[1], ev[2], ev[0]), daemon=True)
                 h.start(); hilos.append(h)
-            gp = [read for read in (read_json(os.path.join(workdir, f"gen_{g}.json")) for g in range(a.generators)) if read]
-            pp = [read_json(p) for p in (os.path.join(workdir, f) for f in os.listdir(workdir) if f.startswith("proc_p"))]
-            pp = [x for x in pp if x]
+            # Lectura robusta: si un archivo de progreso no se puede leer un instante, se conserva su último valor
+            # (antes se omitía y la suma caía); los temporales *.tmp* nunca se cuentan como procesadores.
+            for g in range(a.generators):
+                v = read_json(os.path.join(workdir, f"gen_{g}.json"))
+                if v:
+                    ultimo[f"gen_{g}.json"] = v
+            for f in os.listdir(workdir):
+                if es_progreso_proc(f):
+                    v = read_json(os.path.join(workdir, f))
+                    if v:
+                        ultimo[f] = v
+            gp = [ultimo[f"gen_{g}.json"] for g in range(a.generators) if f"gen_{g}.json" in ultimo]
+            pp = [v for k, v in ultimo.items() if k.startswith("proc_p")]
             gen_u = sum(x["unique_generated"] for x in gp)
             ins = sum(x["inserted"] for x in pp)
             serie.append({"t": round(t, 1), "generadas": gen_u, "publicadas": sum(x["published"] for x in gp),
@@ -216,7 +236,7 @@ def main() -> None:
 
     # ---------- verificación contra la BD ----------
     gf = [read_json(os.path.join(workdir, f"gen_{g}.json")) or {} for g in range(a.generators)]
-    pf = [read_json(os.path.join(workdir, f)) for f in sorted(os.listdir(workdir)) if f.startswith("proc_p")]
+    pf = [read_json(os.path.join(workdir, f)) for f in sorted(os.listdir(workdir)) if es_progreso_proc(f)]
     pf = [x for x in pf if x]
     if a.backend == "file":
         from cloud.adapters.store_sqlite import SqliteStore
