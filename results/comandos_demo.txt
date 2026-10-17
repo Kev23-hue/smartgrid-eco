@@ -1,0 +1,20 @@
+﻿== ES-05: 1000 comandos NO autenticados (firma basura, sin firma, llave ajena, suplantación, alterados) ==
+Rechazados: 1000/1000 | registrados en la auditoría: 1000/1000 | llegaron al inversor: 0
+ES-05 -> PASA
+
+== ES-07: comando crítico (open_breaker) ==
+1) Ana lo emite sola: PENDIENTE (crítico: falta la aprobación de un segundo operador); ejecutado: False
+2) Ana intenta aprobar su propio comando: RECHAZADO (el aprobador debe ser distinto del emisor)
+3) Beto (otro operador) aprueba: ACEPTADO; ejecutado: True
+ES-07 -> PASA
+
+== Anti-repetición ==
+Primera vez: ACEPTADO | repetido: RECHAZADO
+
+== Auditoría ==
+Eventos: 1005 | cadena de hashes íntegra: True
+Intento de borrar la auditoría: bloqueado (auditoria de solo insercion)
+
+== Costo de verificar (T4): 3000 comandos válidos, con nonces y auditoría EN DISCO ==
+{"n": 3000, "p50": 14.262, "p95": 30.249, "p99": 46.254, "max": 101.529, "mean": 18.236}
+Verificar+nonce+auditar+ejecutar: p50=14.262 ms, p99=46.254 ms (presupuesto del lazo de control: 2000 ms)
