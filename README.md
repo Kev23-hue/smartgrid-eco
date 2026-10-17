@@ -1,4 +1,4 @@
-# SmartGrid-Eco: prototipo (etapas 1, 2 y 3)
+# SmartGrid-Eco: prototipo (etapas 1 a 4)
 
 Prototipo del núcleo hexagonal del controlador de borde y de su lazo de balanceo.
 Corresponde a ADR-001 y ADR-006 y a los escenarios ES-02 (latencia) y ES-04 (modificabilidad)
@@ -74,13 +74,48 @@ Pasos y comandos: `GUIA_ETAPA3.md`.
 | Escenario | Qué se verifica | Límite |
 |---|---|---|
 | ES-06 | Factura de prueba con corte de red, acks perdidos, 5% de duplicados y desorden: 0 lecturas duplicadas o perdidas; los huecos se reportan y no se facturan. | La "factura" es la suma de agregados de intervalos completos; no es el servicio de facturación real. |
-| S16 | `cloud.store_bench` mide filas/s de la inserción idempotente con índice único. | Un contenedor local, no los 2 nodos de 8 vCPU / 64 GiB del diseño. |
+| S16 | `cloud.store_bench` mide filas/s de la inserción idempotente con índice único, con 1 a N escritores en paralelo, distintos tamaños de lote y `synchronous_commit` activado o apagado (seguro aquí porque los offsets van en la misma transacción). | Un contenedor local, no los 2 nodos de 8 vCPU / 64 GiB del diseño. |
 
 **Hallazgos de la etapa 3 (para el documento):**
 - Los kWh se guardan como `double precision`. ES-06 exige tolerancia 0 al reconciliar sumas; con decimales binarios eso no se puede garantizar. Para facturar hay que guardar la energía en Wh enteros o en `NUMERIC`.
 - Los contadores de lecturas por intervalo comparan contra 180 (900 s / 5 s). Un intervalo con más de 180 se marca como anomalía, no se factura en silencio.
 - El SQL se validó contra PostgreSQL 16 real; lo específico de TimescaleDB (hipertabla) y el controlador `psycopg` se validan al correr la guía en tu equipo.
 
+## Etapa 4: comandos firmados, prueba de carga y fallas (ES-05, ES-07, ES-01, ES-03, ES-06)
+
+**Comandos (ADR-007).** `edge/core/commands.py` verifica en este orden: estructura, firma Ed25519 del emisor,
+acción permitida, vigencia (ni vencido ni emitido en el futuro, vigencia máxima 60 s) y nonce no repetido
+(persistente: sobrevive a reinicios). Un comando con firma inválida se rechaza **sin gastar nonces**. Los
+comandos críticos (`open_breaker`, `island_mode`, `set_export_zero`) quedan PENDIENTES hasta que un segundo
+operador, distinto del emisor, firme la aprobación; con una sola autorización no se ejecutan. Todo resultado
+queda en la auditoría encadenada por hash. `python -m edge.commands_demo` lo muestra y mide el costo.
+
+**Prueba de carga (`loadtest/`).** `python -m loadtest.run` lanza G generadores (cada uno es un reenviador
+del borde con su cola en disco) y P procesadores como procesos separados, ejecuta una línea de tiempo de
+fallas y verifica contra la base: lecturas únicas generadas = lecturas en la BD, suma de kWh exacta, cola del
+borde vacía, cero mensajes muertos. Escenarios: `burst` (ráfaga ×3 y recuperación), `ramp` (escalones hasta
+saturar) y `chaos` (log caído, BD caída, procesador muerto, acks perdidos, 2% de duplicados y 2% de tardías).
+Con `--backend file` corre sin Docker (solo para ensayar el montaje); con `--backend kafka` usa Redpanda y
+TimescaleDB reales y tumba los contenedores con `docker compose stop/start`.
+
+**Por qué un generador en Python y no k6/JMeter/Gatling.** La carta los menciona como ejemplos de herramienta.
+Aquí el estímulo no es HTTP: es un reenviador con cola durable que publica por el protocolo de Kafka. k6 y
+JMeter necesitarían extensiones para Kafka y no ejercitarían el reenviador real. El generador usa el mismo
+código del borde (cola, reintentos, publicación) y mide p50/p95/p99 de ingesta, publicación y extremo a
+extremo. Es una decisión a defender, no un detalle.
+
+**Contenedores.** `docker compose -f infra/docker-compose.yml --profile app up -d --build` levanta
+cuatro servicios de larga duración: Redpanda, TimescaleDB, procesador y reenviador del borde.
+
+| Escenario | Qué se verifica | Límite |
+|---|---|---|
+| ES-05 | 1.000 comandos no autenticados (firma basura, sin firma, llave ajena, suplantación, alterados): 1.000 rechazados y registrados, 0 llegan al inversor. | Las llaves públicas están en un archivo/memoria; en el diseño las firma un KMS/HSM. |
+| ES-07 | Crítico con una autorización: pendiente, no se ejecuta. El mismo operador no puede aprobarse. Con dos distintos: se ejecuta y ambos quedan en la auditoría. | La lista de comandos críticos es un supuesto (S4). Los pendientes viven en memoria: tras un reinicio hay que volver a emitir. |
+| ES-01 | Ráfaga ×3 respecto al nominal a escala del portátil; recuperación medida. | **No** son 30.000 mensajes/s: la extrapolación se justifica con la prueba de escalones y 1/2/4 procesadores. |
+| ES-03 / ES-06 | Con fallas inyectadas: 0 perdidas, 0 duplicadas en la suma de kWh. | Un solo nodo de Redpanda y de TimescaleDB; no se prueba falla de disco ni de red parcial. |
+
+Pasos y comandos: `GUIA_ETAPA4.md`.
+
 ## Próximas etapas
 
-4. Generador de carga, inyección de fallos e informe de pruebas.
+5. Informe de pruebas de carga (PDF) con los resultados de la etapa 4, y validación del prototipo en el documento.

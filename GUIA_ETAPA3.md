@@ -57,10 +57,15 @@ python -m unittest tests.test_store_contract -v
 Deben salir **16 pruebas OK y 0 omitidas** (8 de SQLite y 8 de TimescaleDB).
 
 ## 6. Medir S16 (la hipótesis de mayor riesgo)
+Versión rápida (unos 3 a 5 minutos), con 1 y 4 escritores en paralelo:
 ```
-python -m cloud.store_bench --rows 300000
+python -m cloud.store_bench --rows 100000 --workers 1 4 --batches 2000
 ```
-Escribe `results/s16_timescale.json`. Pégame la salida completa. Ojo: el objetivo de 30.000 filas/s es para 2 nodos de 8 vCPU y 64 GiB; tu laptop dentro de Docker es una referencia, no la validación final. Un resultado por debajo del objetivo NO es un fracaso: es un dato que va al documento con su explicación.
+Versión completa (10 a 15 minutos; solo si tienes tiempo):
+```
+python -m cloud.store_bench --rows 200000
+```
+Escribe `results/s16_timescale.json`. Pégame la salida completa. El objetivo de 30.000 filas/s es para 2 nodos de 8 vCPU y 64 GiB; tu laptop dentro de Docker es una referencia, no la validación final. Un resultado por debajo del objetivo NO es un fracaso: es un dato que va al documento con su explicación.
 
 ## 7. Punta a punta con corte de red (ES-03 + ES-06)
 Terminal 1: corre la demo del borde y **anota el identificador de la corrida** (aparece como `Corrida a1b2c3`):

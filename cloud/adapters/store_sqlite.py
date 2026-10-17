@@ -12,7 +12,9 @@ from ..core.model import INTERVAL_MS, IntervalAggregate, Position, Reading, inte
 
 class SqliteStore:
     def __init__(self, path: str = ":memory:"):
-        self._db = sqlite3.connect(path, isolation_level=None)
+        self._db = sqlite3.connect(path, isolation_level=None, timeout=30)
+        if path != ":memory:":
+            self._db.execute("PRAGMA journal_mode=WAL")   # permite leer (verificar) mientras se escribe
         self._db.executescript("""
             CREATE TABLE IF NOT EXISTS readings (
                 meter_id TEXT NOT NULL, measured_at INTEGER NOT NULL, seq INTEGER NOT NULL, kwh REAL NOT NULL,
@@ -67,6 +69,10 @@ class SqliteStore:
     def raw_totals(self) -> tuple[int, float]:
         """Conteo y suma directamente de las lecturas crudas: la segunda ruta para reconciliar (ES-06)."""
         return self._db.execute("SELECT COUNT(*), COALESCE(SUM(kwh), 0) FROM readings").fetchone()
+
+    def prefix_totals(self, prefix: str) -> tuple[int, float]:
+        return self._db.execute(
+            "SELECT COUNT(*), COALESCE(SUM(kwh), 0) FROM readings WHERE meter_id LIKE ?", (prefix + "%",)).fetchone()
 
     def close(self) -> None:
         self._db.close()
