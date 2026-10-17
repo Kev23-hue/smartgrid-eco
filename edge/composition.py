@@ -10,14 +10,14 @@ import json
 from .adapters.audit_sqlite import SqliteAudit
 from .adapters.clock import MonotonicClock
 from .adapters.policy_file import FilePolicyRepository
-from .adapters.simulated import (SimulatedActuator, SimulatedBiomass, SimulatedDemand,
+from .adapters.simulated import (SimulatedActuator, SimulatedDemand,
                                  SimulatedSolar, SimulatedWind)
 from .core.control_loop import ControlLoop
 
 SOURCE_ADAPTERS = {
     "solar": SimulatedSolar,
     "eolica": SimulatedWind,
-    "biomasa": SimulatedBiomass,
+    
 }
 
 

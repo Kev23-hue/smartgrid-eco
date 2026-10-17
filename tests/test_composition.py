@@ -18,18 +18,6 @@ class ComposicionTests(unittest.TestCase):
         r = loop.run_cycle()
         self.assertEqual(r.state.generation_kw, 140.0)  # solar 100 + eólica 40
 
-    def test_agregar_biomasa_solo_cambia_la_configuracion(self):
-        with open("edge/config/microgrid.json", encoding="utf-8") as f:
-            cfg = json.load(f)
-        cfg["sources"].append({"adapter": "biomasa", "kw": 30})
-        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as t:
-            json.dump(cfg, t)
-        try:
-            loop = build_from_config(t.name, audit_path=":memory:")
-            self.assertEqual(loop.run_cycle().state.generation_kw, 170.0)
-        finally:
-            os.unlink(t.name)
-
-
+    
 if __name__ == "__main__":
     unittest.main()
