@@ -1,121 +1,132 @@
-# SmartGrid-Eco: prototipo (etapas 1 a 4)
+# SmartGrid-Eco: prototipo arquitectónico ejecutable
 
-Prototipo del núcleo hexagonal del controlador de borde y de su lazo de balanceo.
-Corresponde a ADR-001 y ADR-006 y a los escenarios ES-02 (latencia) y ES-04 (modificabilidad)
-del Documento de Diseño Arquitectónico.
+Corte vertical del caso SmartGrid-Eco (Examen de Suficiencia, CADI Profundización III – Estructura y
+Arquitectura de Software). Valida con evidencia las decisiones de mayor riesgo del Documento de Diseño
+Arquitectónico: ingesta con broker y procesador de flujos, núcleo hexagonal extensible y lazo de control
+del borde.
 
-No necesita instalar nada: solo Python 3.12 (usa únicamente la biblioteca estándar).
+**Autor:** Kevin Santiago Plazas Cubillos, Ingeniería de Software, Universidad de Cundinamarca.
+**Uso de IA generativa:** declarado en la sección 17 del documento de diseño (qué partes y con qué propósito).
 
-## Cómo ejecutarlo (PowerShell, dentro de la carpeta del proyecto)
+## Qué contiene
+
+| Contenedor (Docker Compose) | Función | Decisión que valida |
+|---|---|---|
+| `sge-redpanda` | Log de eventos compatible con Kafka, 24 particiones | ADR-003 (Kappa), ES-01 |
+| `sge-timescaledb` | Lecturas, agregados de 15 min y offsets (TimescaleDB / PostgreSQL 16) | ADR-004, ES-06 |
+| `sge-processor` | Procesador de flujos: valida, descarta duplicados, escribe lecturas + agregados + offsets en **una** transacción | ADR-004 (efectivamente una vez) |
+| `sge-edge-forwarder` | Reenviador del borde con cola durable en disco | ES-03, ES-01 |
+
+Además, el núcleo hexagonal del controlador de borde (`edge/core`), la pasarela de comandos firmados y
+la prueba de carga (`loadtest/`).
+
+## Requisitos
+
+- Python 3.12 y Docker Desktop (Compose v2).
+- `pip install -r requirements.txt` (confluent-kafka, psycopg, cryptography). Las pruebas unitarias
+  básicas solo usan la biblioteca estándar; las que dependen de PostgreSQL o `cryptography` se omiten si
+  faltan.
+
+## Despliegue (los 4 contenedores)
 
 ```
-python -m unittest discover -s tests -t . -v      # 65 pruebas (8 omitidas sin PostgreSQL)
-python -m edge.bench --events 1000                # ES-02 sin retardo de campo
+docker compose -f infra/docker-compose.yml --profile app up -d --build
+docker compose -f infra/docker-compose.yml ps          # deben aparecer los 4 servicios activos
+```
+
+Comprobar que el flujo funciona (el contador debe crecer entre una consulta y otra):
+
+```
+docker exec sge-timescaledb psql -U sge -d sge -c "SELECT count(*) FROM readings;"
+```
+
+Apagar y limpiar: `docker compose -f infra/docker-compose.yml --profile app down -v`.
+El esquema se aplica solo la primera vez (volumen vacío); para rehacerlo hay que usar `down -v`.
+
+## Pruebas automáticas
+
+```
+python -m unittest discover -s tests -t . -v
+```
+
+Resultado esperado: **81 pruebas OK, 8 omitidas** (las omitidas requieren PostgreSQL real).
+Incluye una prueba de arquitectura (`tests/test_architecture.py`) que falla si el núcleo importa un adaptador.
+
+## Pruebas de carga y de fallos (informe: `SmartGridEco_Informe_Pruebas_de_Carga.pdf`)
+
+Requieren Redpanda y TimescaleDB levantados (`docker compose -f infra/docker-compose.yml up -d`).
+
+```
+python -m loadtest.run --scenario burst --processors 2          # ráfaga x3 y recuperación
+python -m loadtest.run --scenario ramp  --processors 2          # escalones hasta saturar
+python -m loadtest.run --scenario chaos --processors 2 \
+    --chaos "20:broker_down:5,45:db_down:5,70:kill_processor:0"  # inyección de fallos
+```
+
+Cada corrida verifica contra la base: lecturas únicas generadas = lecturas almacenadas, suma de kWh
+exacta, cola del borde vacía, 0 mensajes muertos. Los resultados (JSON con p50/p95/p99) quedan en `results/`.
+Opciones completas: `python -m loadtest.run --help`. Con `--backend file` se puede ensayar sin Docker.
+
+**Por qué un generador propio y no k6/JMeter/Gatling.** El estímulo no es HTTP: es un reenviador del borde
+con cola durable que publica por el protocolo de Kafka. El generador usa el mismo código del borde y mide
+p50/p95/p99 de ingesta, publicación y extremo a extremo.
+
+### Resultados principales (portátil Windows 11, 12 CPU, Python 3.12)
+
+| Verificación | Resultado |
+|---|---|
+| Lecturas perdidas / diferencia de kWh en 6 corridas con Redpanda real | 0 / 0 |
+| Caos (log caído, BD caída, procesador muerto) | 79.979 generadas = 79.979 almacenadas; 1.408 duplicados descartados |
+| Recuperación tras ráfaga | 1,0 s con 2 procesadores; 13,1 s con 1 |
+| Capacidad sostenida (1 / 2 / 4 procesadores) | ≈ 1,7 k / 4,1 k / 7,9 k filas/s |
+| Escritura idempotente, mejor caso en un contenedor (S16) | 22.558 filas/s (la meta de 30.000 **no** se alcanzó) |
+
+## Otras demostraciones
+
+```
+python -m edge.bench --events 1000                                   # ES-02: latencia del lazo, sin retardo de campo
 python -m edge.bench --events 400 --io-delay-ms 50 --out results/es02_retardo_50ms.json
+python -m edge.queue_bench --rows 20000                              # cola en disco (lecturas/s)
+python -m edge.commands_demo                                         # ES-05 y ES-07: comandos firmados
+python -m cloud.store_bench                                          # S16: inserción idempotente
 ```
+
+| Escenario | Resultado |
+|---|---|
+| ES-02 lazo de control | p99 de 0,0117 ms de software; 50,8 ms con 50 ms de E/S simulada |
+| ES-04 agregar biomasa | 3 archivos, 26 líneas, **0 líneas en `edge/core`** (ver commits) |
+| ES-05 comandos no autenticados | 1.000 / 1.000 rechazados y auditados; 0 llegan al inversor |
+| ES-07 doble aprobación | Un crítico con una sola firma queda pendiente; el mismo operador no puede aprobarse |
+
+Evidencia de ES-04 en el historial: `git log --stat --oneline -- edge/adapters/simulated.py edge/composition.py`.
 
 ## Estructura
 
 ```
-edge/core/           NÚCLEO: modelo, puertos, política de balanceo, ciclo de control.
-                     No importa adaptadores ni librerías de E/S (lo verifica una prueba).
-edge/adapters/       ADAPTADORES: fuentes simuladas, actuador simulado, auditoría SQLite
-                     con hash encadenado, repositorio de políticas, reloj.
-edge/core/forwarding.py  NÚCLEO del reenviador (etapa 2): cola primero, red después, reintento con espera.
-cloud/core/          NÚCLEO de la nube (etapa 3): procesador de flujos y informe de huecos.
-cloud/adapters/      Almacenes (SQLite, TimescaleDB), consumidor Kafka, log en memoria.
-cloud/sql/           Esquema de la base (PostgreSQL / TimescaleDB).
+edge/core/           NÚCLEO del borde: modelo, puertos, balanceo, ciclo de control, reenvío, comandos.
+edge/adapters/       Fuentes simuladas, actuador, auditoría con hash encadenado, cola SQLite, Kafka, firma Ed25519.
 edge/composition.py  Único lugar que une núcleo y adaptadores (registro de fuentes).
-edge/config/         Configuración de la microred y política de balanceo.
-edge/bench.py        Benchmark de latencia del lazo (p50, p95, p99).
-edge/queue_bench.py  Benchmark de la cola en disco (lecturas/s, ES-01).
-edge/forwarder_demo.py  Demostración contra Redpanda real con corte de red (ES-03).
-infra/               docker-compose con Redpanda de un nodo.
+cloud/core/          NÚCLEO de la nube: procesador de flujos e informe de huecos.
+cloud/adapters/      Almacenes (SQLite, TimescaleDB), consumidor Kafka, mensajes muertos.
+cloud/sql/           Esquema PostgreSQL / TimescaleDB.
+loadtest/            Generadores, procesadores y orquestador de escenarios.
+infra/               docker-compose.yml y Dockerfile.
 tests/               Pruebas automáticas.
-results/             Salidas de los benchmarks (evidencia para el documento).
+results/             Evidencia: JSON de benchmarks y de pruebas de carga.
+GUIA_*.md            Guías paso a paso de cada etapa.
 ```
 
-## Qué demuestra y qué NO demuestra
+## Limitaciones conocidas (también en la sección 16 del documento)
 
-| Escenario | Qué se verifica | Límite |
-|---|---|---|
-| ES-02 | El tiempo que añade el software (decidir y ordenar) es de microsegundos; el presupuesto de 2 s lo consumen el sondeo y el bus de campo. | El actuador es simulado. La latencia real de Modbus/IEC 61850 debe medirse con hardware o un simulador de protocolo. |
-| ES-04 | Agregar biomasa = un adaptador nuevo + una línea en la configuración, sin tocar `edge/core`. La prueba `test_architecture` falla si el núcleo importa adaptadores. | Los días-persona de ES-04 se miden con el historial de commits. |
-| ES-05 (parcial) | La auditoría es de solo inserción y detecta manipulación por hash. | Falta la firma de comandos, nonce y caducidad (etapa siguiente). |
+- Un solo nodo de Redpanda y de TimescaleDB; no se prueba replicación ni falla de disco.
+- El actuador y las fuentes son simulados: la latencia real de Modbus/IEC 61850 no está medida.
+- Los kWh se guardan como `double`; ADR-008 (energía en Wh enteros) está decidido pero **no implementado**.
+- Tras una caída de la base de datos, el procesador puede tardar ≈ 21 s en reanudar (falta tiempo máximo de conexión).
+- La inyección `lose_acks` solo aplica al backend de archivo.
+- No se alcanzaron las 30.000 filas/s (S16); la extrapolación al volumen del diseño está en la sección 16.6.
 
-## Etapa 2: reenviador con cola en disco (ES-01, ES-03)
+## Desarrollo incremental y autoría
 
-```
-pip install -r requirements.txt                    # solo para la demo con Redpanda
-docker compose -f infra/docker-compose.yml up -d   # levanta Redpanda y crea el tema telemetry.raw
-python -m edge.forwarder_demo --readings 6000 --rate 100
-docker compose -f infra/docker-compose.yml stop redpanda    # durante la demo: corta el log
-docker compose -f infra/docker-compose.yml start redpanda   # y vuélvelo a levantar
-python -m edge.queue_bench --rows 20000            # lecturas/s que aguanta la cola en disco
-```
-
-Reglas de diseño que se demuestran: la ingesta nunca espera a la red (se guarda primero en disco);
-una lectura sale de la cola solo cuando el log la confirma; si falla, se reintenta con espera
-creciente y aleatoria; el envío es al menos una vez (puede haber duplicados) y la clave
-(meter_id, measured_at) permite descartarlos aguas abajo (etapa 3).
-
-| Escenario | Qué se verifica | Límite |
-|---|---|---|
-| ES-03 | Con el log caído, la ingesta sigue, la cola crece, y al volver se reconcilia todo sin pérdidas. | Un solo nodo de Redpanda y un solo reenviador. No se prueba la caída del disco del borde. |
-| ES-01 | La cola en disco aguanta el pico por microred (30.000 / 12 = 2.500 lecturas/s). | No es la prueba de 30.000/s del lado de la nube: eso es la etapa 4. |
-
-## Etapa 3: procesador de flujos y TimescaleDB (ES-06, ES-01, S16)
-
-El procesador lee del log, valida, descarta duplicados con la clave (meter_id, measured_at) y escribe en
-UNA transacción: lecturas + agregados de 15 minutos + offsets. Si cae a medias, no queda nada a medias;
-al reiniciar retoma desde el offset guardado en la base. Releer todo el log (Kappa) no cambia el resultado.
-Pasos y comandos: `GUIA_ETAPA3.md`.
-
-| Escenario | Qué se verifica | Límite |
-|---|---|---|
-| ES-06 | Factura de prueba con corte de red, acks perdidos, 5% de duplicados y desorden: 0 lecturas duplicadas o perdidas; los huecos se reportan y no se facturan. | La "factura" es la suma de agregados de intervalos completos; no es el servicio de facturación real. |
-| S16 | `cloud.store_bench` mide filas/s de la inserción idempotente con índice único, con 1 a N escritores en paralelo, distintos tamaños de lote y `synchronous_commit` activado o apagado (seguro aquí porque los offsets van en la misma transacción). | Un contenedor local, no los 2 nodos de 8 vCPU / 64 GiB del diseño. |
-
-**Hallazgos de la etapa 3 (para el documento):**
-- Los kWh se guardan como `double precision`. ES-06 exige tolerancia 0 al reconciliar sumas; con decimales binarios eso no se puede garantizar. Para facturar hay que guardar la energía en Wh enteros o en `NUMERIC`.
-- Los contadores de lecturas por intervalo comparan contra 180 (900 s / 5 s). Un intervalo con más de 180 se marca como anomalía, no se factura en silencio.
-- El SQL se validó contra PostgreSQL 16 real; lo específico de TimescaleDB (hipertabla) y el controlador `psycopg` se validan al correr la guía en tu equipo.
-
-## Etapa 4: comandos firmados, prueba de carga y fallas (ES-05, ES-07, ES-01, ES-03, ES-06)
-
-**Comandos (ADR-007).** `edge/core/commands.py` verifica en este orden: estructura, firma Ed25519 del emisor,
-acción permitida, vigencia (ni vencido ni emitido en el futuro, vigencia máxima 60 s) y nonce no repetido
-(persistente: sobrevive a reinicios). Un comando con firma inválida se rechaza **sin gastar nonces**. Los
-comandos críticos (`open_breaker`, `island_mode`, `set_export_zero`) quedan PENDIENTES hasta que un segundo
-operador, distinto del emisor, firme la aprobación; con una sola autorización no se ejecutan. Todo resultado
-queda en la auditoría encadenada por hash. `python -m edge.commands_demo` lo muestra y mide el costo.
-
-**Prueba de carga (`loadtest/`).** `python -m loadtest.run` lanza G generadores (cada uno es un reenviador
-del borde con su cola en disco) y P procesadores como procesos separados, ejecuta una línea de tiempo de
-fallas y verifica contra la base: lecturas únicas generadas = lecturas en la BD, suma de kWh exacta, cola del
-borde vacía, cero mensajes muertos. Escenarios: `burst` (ráfaga ×3 y recuperación), `ramp` (escalones hasta
-saturar) y `chaos` (log caído, BD caída, procesador muerto, acks perdidos, 2% de duplicados y 2% de tardías).
-Con `--backend file` corre sin Docker (solo para ensayar el montaje); con `--backend kafka` usa Redpanda y
-TimescaleDB reales y tumba los contenedores con `docker compose stop/start`.
-
-**Por qué un generador en Python y no k6/JMeter/Gatling.** La carta los menciona como ejemplos de herramienta.
-Aquí el estímulo no es HTTP: es un reenviador con cola durable que publica por el protocolo de Kafka. k6 y
-JMeter necesitarían extensiones para Kafka y no ejercitarían el reenviador real. El generador usa el mismo
-código del borde (cola, reintentos, publicación) y mide p50/p95/p99 de ingesta, publicación y extremo a
-extremo. Es una decisión a defender, no un detalle.
-
-**Contenedores.** `docker compose -f infra/docker-compose.yml --profile app up -d --build` levanta
-cuatro servicios de larga duración: Redpanda, TimescaleDB, procesador y reenviador del borde.
-
-| Escenario | Qué se verifica | Límite |
-|---|---|---|
-| ES-05 | 1.000 comandos no autenticados (firma basura, sin firma, llave ajena, suplantación, alterados): 1.000 rechazados y registrados, 0 llegan al inversor. | Las llaves públicas están en un archivo/memoria; en el diseño las firma un KMS/HSM. |
-| ES-07 | Crítico con una autorización: pendiente, no se ejecuta. El mismo operador no puede aprobarse. Con dos distintos: se ejecuta y ambos quedan en la auditoría. | La lista de comandos críticos es un supuesto (S4). Los pendientes viven en memoria: tras un reinicio hay que volver a emitir. |
-| ES-01 | Ráfaga ×3 respecto al nominal a escala del portátil; recuperación medida. | **No** son 30.000 mensajes/s: la extrapolación se justifica con la prueba de escalones y 1/2/4 procesadores. |
-| ES-03 / ES-06 | Con fallas inyectadas: 0 perdidas, 0 duplicadas en la suma de kWh. | Un solo nodo de Redpanda y de TimescaleDB; no se prueba falla de disco ni de red parcial. |
-
-Pasos y comandos: `GUIA_ETAPA4.md`.
-
-## Próximas etapas
-
-5. Informe de pruebas de carga (PDF) con los resultados de la etapa 4, y validación del prototipo en el documento.
+Los commits están hechos desde la cuenta del autor, en pequeños pasos por etapa (`GUIA_COMMITS.md`).
+`git log --oneline --stat` muestra la evolución: núcleo, adaptadores, reenviador, procesador, comandos,
+carga y resultados.
